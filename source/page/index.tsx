@@ -11,8 +11,10 @@ import { HomePage } from './Home';
 import { HospitalPage } from './Hospital';
 import { HospitalEdit } from './Hospital/Edit';
 import { LogisticsPage } from './Logistics';
-
-import './index.css';
+import { HotelPage } from './Hotel';
+import { FactoryPage } from './Factory';
+import { DonationPage } from './Donation';
+import { ClinicPage } from './Clinic';
 
 @observer
 @component({
@@ -25,8 +27,18 @@ export class PageRouter extends HTMLRouter {
         { paths: [''], component: HomePage },
         { paths: ['hospital'], component: HospitalPage },
         { paths: ['hospital/edit'], component: HospitalEdit },
-        { paths: ['logistics'], component: LogisticsPage }
+        { paths: ['logistics'], component: LogisticsPage },
+        { paths: ['hotel'], component: HotelPage },
+        { paths: ['factory'], component: FactoryPage },
+        { paths: ['donation'], component: DonationPage },
+        { paths: ['clinic'], component: ClinicPage }
     ];
+
+    connectedCallback() {
+        this.classList.add('d-flex', 'flex-column', 'vh-100');
+
+        super.connectedCallback();
+    }
 
     async signOut() {
         await session.signOut();
@@ -36,7 +48,7 @@ export class PageRouter extends HTMLRouter {
 
     render() {
         return (
-            <div className="wrapper">
+            <Fragment>
                 <NavBar
                     title="2020 援助武汉"
                     menu={menu.map(({ title, href }) => ({
@@ -64,10 +76,7 @@ export class PageRouter extends HTMLRouter {
                     )}
                 </NavBar>
 
-                <main
-                    className="main-container container my-5 pt-3"
-                    style={{ minHeight: '60vh' }}
-                >
+                <main className="flex-grow-1 container my-5 pt-3">
                     {super.render()}
                 </main>
 
@@ -89,7 +98,7 @@ export class PageRouter extends HTMLRouter {
                         BootCell v1
                     </a>
                 </footer>
-            </div>
+            </Fragment>
         );
     }
 }

@@ -2,32 +2,38 @@ import { component, mixin, watch, createCell } from 'web-cell';
 import { FormField } from 'boot-cell/source/Form/FormField';
 import { Button } from 'boot-cell/source/Form/Button';
 
+import { mergeList } from '../../utility';
 import { RouteRoot } from '../menu';
+import CommonSupplies from './Supplies';
 import {
     SuppliesRequirement,
+    Address,
+    Supplies,
+    Contact,
     searchAddress,
     suppliesRequirement,
     history
 } from '../../model';
 import { SessionBox } from '../../component';
 
+type HospitalEditProps = SuppliesRequirement & { loading?: boolean };
+
 @component({
     tagName: 'hospital-edit',
     renderTarget: 'children'
 })
-export class HospitalEdit extends mixin<
-    { srid: string },
-    SuppliesRequirement
->() {
+export class HospitalEdit extends mixin<{ srid: string }, HospitalEditProps>() {
     @watch
     srid = '';
 
     state = {
+        loading: false,
         hospital: '',
-        address: '',
-        coords: [],
-        supplies: [''],
-        contacts: [{ name: '', number: '' }]
+        address: {} as Address,
+        url: '',
+        supplies: CommonSupplies as Supplies[],
+        contacts: [{} as Contact],
+        remark: ''
     };
 
     async connectedCallback() {
@@ -35,15 +41,30 @@ export class HospitalEdit extends mixin<
 
         if (!this.srid) return;
 
+        await this.setState({ loading: true });
+
         const {
             hospital,
             address,
-            coords,
+            url,
             supplies,
-            contacts
+            contacts,
+            remark
         } = await suppliesRequirement.getOne(this.srid);
 
-        this.setState({ hospital, address, coords, supplies, contacts });
+        this.setState({
+            loading: false,
+            hospital,
+            address,
+            url,
+            supplies: mergeList<Supplies>(
+                'name',
+                this.state.supplies,
+                supplies
+            ),
+            contacts,
+            remark
+        });
     }
 
     changeText = ({ target }: Event) => {
@@ -55,40 +76,48 @@ export class HospitalEdit extends mixin<
     searchAddress = async ({ target }: Event) => {
         const { value } = target as HTMLInputElement;
 
-        const [
-            { pname, cityname, adname, address, location }
-        ] = await searchAddress(value);
+        await this.setState({ loading: true });
 
-        await this.setState({
-            address: pname + cityname + adname + address,
-            coords: location.split(',').map(Number)
-        });
+        try {
+            const [
+                { pname, cityname, adname, address, location }
+            ] = await searchAddress(value);
+
+            await this.setState({
+                loading: false,
+                address: {
+                    province: pname,
+                    city: cityname,
+                    district: adname,
+                    detail: address,
+                    coords: location.split(',').map(Number)
+                }
+            });
+        } catch {
+            await this.setState({ loading: false });
+        }
     };
 
-    changeSupply(index: number, event: Event) {
-        event.stopPropagation();
-
-        const { value } = event.target as HTMLInputElement;
-
-        this.state.supplies[index] = value;
-    }
-
-    addSupply = () => this.setState({ supplies: [...this.state.supplies, ''] });
-
-    deleteSupply(index: number) {
-        const { supplies } = this.state;
-
-        supplies.splice(index, 1);
-
-        this.setState({ supplies });
-    }
-
-    changeContact(index: number, event: Event) {
+    changeListItem(
+        key: keyof SuppliesRequirement,
+        index: number,
+        event: Event
+    ) {
         event.stopPropagation();
 
         const { name, value } = event.target as HTMLInputElement;
 
-        this.state.contacts[index][name] = value;
+        this.state[key][index][name] = value;
+    }
+
+    addSupply = () => this.setState({ supplies: [...this.state.supplies, {}] });
+
+    deleteListItem(key: keyof SuppliesRequirement, index: number) {
+        const list = this.state[key];
+
+        list.splice(index, 1);
+
+        this.setState({ [key]: list });
     }
 
     addContact = () =>
@@ -96,25 +125,37 @@ export class HospitalEdit extends mixin<
             contacts: [...this.state.contacts, { name: '', number: '' }]
         });
 
-    deleteContact(index: number) {
-        const { contacts } = this.state;
-
-        contacts.splice(index, 1);
-
-        this.setState({ contacts });
-    }
-
     handleSubmit = async (event: Event) => {
         event.preventDefault();
 
-        await suppliesRequirement.update(this.state, this.srid);
+        await this.setState({ loading: true });
 
-        self.alert('发布成功！');
+        const { loading, supplies, ...data } = { ...this.state };
 
-        history.push(RouteRoot.Hospital);
+        try {
+            await suppliesRequirement.update(
+                { ...data, supplies: supplies.filter(({ count }) => count) },
+                this.srid
+            );
+            self.alert('发布成功！');
+
+            history.push(RouteRoot.Hospital);
+        } finally {
+            await this.setState({ loading: false });
+        }
     };
 
-    render(_, { hospital, address, supplies, contacts }: SuppliesRequirement) {
+    render(
+        _,
+        {
+            hospital,
+            address: { province, city, district, detail },
+            url,
+            supplies,
+            contacts,
+            loading
+        }: HospitalEditProps
+    ) {
         return (
             <SessionBox>
                 <h2>医用物资需求发布</h2>
@@ -128,34 +169,96 @@ export class HospitalEdit extends mixin<
                         placeholder="可详细至分院、院区、科室"
                         onChange={this.searchAddress}
                     />
+
+                    <FormField label="机构地址">
+                        <div className="input-group">
+                            <input
+                                type="text"
+                                className="form-control"
+                                name="province"
+                                required
+                                defaultValue={province}
+                                placeholder="省/直辖市/自治区/特别行政区"
+                            />
+                            <input
+                                type="text"
+                                className="form-control"
+                                name="city"
+                                required
+                                defaultValue={city}
+                                placeholder="地级市/自治州"
+                            />
+                            <input
+                                type="text"
+                                className="form-control"
+                                name="district"
+                                required
+                                defaultValue={district}
+                                placeholder="区/县/县级市"
+                            />
+                            <input
+                                type="text"
+                                className="form-control"
+                                name="detail"
+                                required
+                                defaultValue={detail}
+                                placeholder="详细地址"
+                            />
+                        </div>
+                    </FormField>
+
                     <FormField
-                        name="address"
+                        type="url"
+                        name="url"
                         required
-                        defaultValue={address}
-                        label="机构地址"
-                        placeholder="先填上一项可自动搜索"
+                        defaultValue={url}
+                        label="官方网址"
                     />
                     <FormField label="物资列表">
-                        {supplies.map((item, index) => (
+                        {supplies.map(({ name, count, remark }, index) => (
                             <div
                                 className="input-group my-1"
                                 onChange={(event: Event) =>
-                                    this.changeSupply(index, event)
+                                    this.changeListItem(
+                                        'supplies',
+                                        index,
+                                        event
+                                    )
                                 }
                             >
                                 <input
                                     type="text"
                                     className="form-control"
-                                    name="supplies"
-                                    value={item}
-                                    placeholder="物资名称"
+                                    name="name"
+                                    value={name}
+                                    placeholder="名称"
+                                />
+                                <input
+                                    type="number"
+                                    className="form-control"
+                                    name="count"
+                                    defaultValue="0"
+                                    value={count}
+                                    placeholder="数量"
+                                />
+                                <input
+                                    type="text"
+                                    className="form-control"
+                                    name="remark"
+                                    value={remark}
+                                    placeholder="备注"
                                 />
                                 <div className="input-group-append">
                                     <Button onClick={this.addSupply}>+</Button>
                                     <Button
                                         kind="danger"
                                         disabled={supplies.length < 2}
-                                        onClick={() => this.deleteSupply(index)}
+                                        onClick={() =>
+                                            this.deleteListItem(
+                                                'supplies',
+                                                index
+                                            )
+                                        }
                                     >
                                         -
                                     </Button>
@@ -169,7 +272,11 @@ export class HospitalEdit extends mixin<
                             <div
                                 className="input-group my-1"
                                 onChange={(event: Event) =>
-                                    this.changeContact(index, event)
+                                    this.changeListItem(
+                                        'contacts',
+                                        index,
+                                        event
+                                    )
                                 }
                             >
                                 <input
@@ -192,7 +299,10 @@ export class HospitalEdit extends mixin<
                                         kind="danger"
                                         disabled={!contacts[1]}
                                         onClick={() =>
-                                            this.deleteContact(index)
+                                            this.deleteListItem(
+                                                'contacts',
+                                                index
+                                            )
                                         }
                                     >
                                         -
@@ -203,7 +313,7 @@ export class HospitalEdit extends mixin<
                     </FormField>
 
                     <div className="form-group mt-3">
-                        <Button type="submit" block>
+                        <Button type="submit" block disabled={loading}>
                             提交
                         </Button>
                         <Button
